@@ -125,3 +125,10 @@ This is a research-oriented repo. Feel free to open issues or pull requests to a
 📄 License
 
 MIT License. See LICENSE for more details.
+
+📬 Contact
+For questions, collaborations, or feedback, feel free to reach out:
+
+📧 Email: fermaat.vl@gmail.com
+🧑‍💻 GitHub: [@fermaat](https://github.com/fermaat)
+🌐 [Website](https://fermaat.github.io)
