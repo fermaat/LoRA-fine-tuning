@@ -5,6 +5,7 @@ This module provides functionality to evaluate language models using various met
 including BLEU, ROUGE, and BERTScore on given datasets.
 """
 
+import json
 from typing import Any, Dict, List, Optional, Tuple
 
 import evaluate
@@ -15,7 +16,7 @@ from transformers import AutoModelForCausalLM, AutoTokenizer
 from cfg import config_logger, logger, settings
 from src.data_loading import get_references, load_evaluation_dataset
 from src.model import load_model_and_tokenizer
-from src.plotting_utils import print_examples
+from src.plotting_utils import plot_metric_scores, print_examples
 from src.utils import setup_device
 
 
@@ -124,7 +125,7 @@ def perform_inference(
         batch_data = dataset.select(batch_indices)
 
         batch_prompts = batch_data["prompt"]
-        # second response is the actual response. TODO: make sure it comes from
+
         batch_references = get_references(batch_data)
 
         generated_texts = generate_response(
@@ -149,6 +150,7 @@ def calculate_metrics(
     bleu_metric,
     rouge_metric,
     bertscore_metric: Optional[Any] = None,
+    experiment_name: str = "evaluation_results",
 ) -> Dict[str, Any]:
     """
     Calculate evaluation metrics for predictions vs references.
@@ -179,6 +181,8 @@ def calculate_metrics(
     results["rouge"] = rouge_results
     logger.info(f"ROUGE: {rouge_results}")
 
+    results_short = {"bleu": bleu_results["bleu"], "rougeL": rouge_results["rougeL"]}
+
     # BERTScore
     if bertscore_metric:
         logger.info("Calculating BERTScore (this might take some time)...")
@@ -191,6 +195,10 @@ def calculate_metrics(
             "average_f1": avg_bertscore_f1,
         }
         logger.info(f"BERTScore (Average F1): {avg_bertscore_f1}")
+        results_short["bertscore"] = avg_bertscore_f1
+
+        # "bertscore": results.get("bertscore", {}).get("average_f1", 0.0)}
+    plot_metric_scores(results_short, experiment_name=experiment_name)
 
     return results
 
@@ -202,6 +210,7 @@ def evaluate_model(
     batch_size: int = None,
     max_new_tokens: int = None,
     num_examples: int = 5,
+    experiment_name: str = "",
 ) -> Dict[str, Any]:
     """
     Main function to evaluate a language model on a given dataset.
@@ -248,15 +257,19 @@ def evaluate_model(
 
     # Calculate metrics
     results = calculate_metrics(
-        predictions, references, bleu_metric, rouge_metric, bertscore_metric
+        predictions,
+        references,
+        bleu_metric,
+        rouge_metric,
+        bertscore_metric,
+        experiment_name,
     )
 
     # Print examples
-    print_examples(dataset, predictions, references, num_examples)
+    print_examples(dataset, predictions, references, num_examples, experiment_name)
 
     logger.info("Evaluation complete!")
-
-    return {
+    output_dict = {
         "metrics": results,
         "predictions": predictions,
         "references": references,
@@ -267,12 +280,16 @@ def evaluate_model(
         },
         "model_info": {"id": model_id, "device": str(device)},
     }
+    with open(f"{settings.results_path}/{experiment_name}_results.json", "w") as f:
+        json.dump(output_dict, f, indent=2)
+
+    return output_dict
 
 
 # For backward compatibility and direct script execution
 def main():
     """Main function for direct script execution."""
-    return evaluate_model()
+    return evaluate_model(experiment_name="raw_test_eval")
 
 
 if __name__ == "__main__":

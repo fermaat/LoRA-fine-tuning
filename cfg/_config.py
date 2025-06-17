@@ -17,7 +17,7 @@ load_dotenv(os.path.join(PROJECT_ROOT, ".env"))
 # Get the library root directory
 # This is the directory where the library files are located
 # TODO: check if this is the correct way to get the library root
-LIBRARY_ROOT = PROJECT_ROOT.joinpath("src", "homesync_AI")
+LIBRARY_ROOT = PROJECT_ROOT.joinpath("src", "LoRA-fine-tuning")
 
 
 class Settings(BaseSettings, case_sensitive=False, extra="ignore"):
@@ -64,6 +64,8 @@ class Settings(BaseSettings, case_sensitive=False, extra="ignore"):
     evaluation_batch_size: int = 4
 
     version: str = "0.1.0"  # Default version, can be overridden by environment variable
+
+    results_path: str = str(PROJECT_ROOT.joinpath("results"))
 
 
 def config_logger(
