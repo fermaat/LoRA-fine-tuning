@@ -1,7 +1,7 @@
 from typing import Tuple
 
 import torch
-from peft import LoraConfig, get_peft_model, prepare_model_for_kbit_training
+from peft import LoraConfig, get_peft_model
 from transformers import AutoModelForCausalLM, AutoTokenizer
 
 from cfg import config_logger, logger, settings
@@ -17,7 +17,9 @@ def load_model_and_tokenizer(
     use_peft: bool = False,
     peft_config: dict = None,
     evaluation_mode: bool = False,
-    dtype=torch.bfloat16,
+    dtype=torch.float16,  # Use float16 for better MPS support
+    model_checkpoint_enable: bool = False,
+    compile_model: bool = False,
 ) -> Tuple[AutoModelForCausalLM, AutoTokenizer]:
     """
     Load and configure the model and tokenizer for evaluation.
@@ -32,21 +34,26 @@ def load_model_and_tokenizer(
     logger.info(f"Loading tokenizer and model: {model_id}...")
 
     tokenizer = AutoTokenizer.from_pretrained(model_id)
+    if tokenizer.pad_token is None:
+        tokenizer.pad_token = tokenizer.eos_token
+        logger.info("Tokenizer `pad_token` was None. Set to `eos_token`.")
 
-    # Gemma models are often in bfloat16, which MPS supports.
+    # Use float16 as it's generally more stable on MPS than bfloat16
+    logger.info(f"Loading model with torch_dtype: {dtype} and device_map: 'auto'")
     model = AutoModelForCausalLM.from_pretrained(
         model_id,
-        torch_dtype=dtype,  # Use bfloat16 for Gemma and MPS
-        device_map="auto",  # This might automatically use MPS, but we'll explicitly move it too
+        torch_dtype=dtype,
+        device_map="auto",
     )
+    if model_checkpoint_enable and not evaluation_mode:
+        logger.info("Enabling model gradient checkpointing.")
+        model.gradient_checkpointing_enable()
 
     if use_peft:
+        logger.info("Configuring model for PEFT (LoRA)...")
         if peft_config is None:
             raise ValueError("PEFT is enabled but no `peft_config` was provided.")
 
-        # Optionally prepare for k-bit (QLoRA etc.)
-        model = prepare_model_for_kbit_training(model)
-        # TODO: export defaults to settings
         lora_config = LoraConfig(
             r=peft_config.get("r", 8),
             lora_alpha=peft_config.get("lora_alpha", 16),
@@ -56,10 +63,21 @@ def load_model_and_tokenizer(
             task_type="CAUSAL_LM",
         )
         model = get_peft_model(model, lora_config)
+        logger.info("PEFT model created.")
         model.print_trainable_parameters()
 
-    model.to(device)  # Explicitly move model to MPS device
+    model.to(device)
+    logger.info(f"Model moved to device: {model.device}")
+
     if evaluation_mode:
+        logger.info("Setting model to evaluation mode.")
         model.eval()
+    elif compile_model:
+        logger.info("Attempting to compile the model with torch.compile()...")
+        try:
+            model = torch.compile(model)
+            logger.info("Model compiled successfully.")
+        except Exception as e:
+            logger.warning(f"torch.compile() is not supported or failed: {e}")
 
     return model, tokenizer

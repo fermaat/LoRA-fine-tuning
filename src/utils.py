@@ -54,3 +54,16 @@ def save_predictions(preds, refs, filename="predictions.txt"):
             f.write(f"Prediction: {p}\n")
             f.write(f"Reference: {r}\n")
             f.write("-" * 40 + "\n")
+
+
+def get_token_lengths_sft(example, tokenizer):
+    text = ""
+    for msg in example["chosen"]:
+        role = msg["role"]
+        content = msg["content"]
+        if role == "user":
+            text += f"### User:\n{content}\n"
+        elif role == "assistant":
+            text += f"### Assistant:\n{content}\n"
+
+    return {"length": len(tokenizer(text, truncation=False)["input_ids"])}

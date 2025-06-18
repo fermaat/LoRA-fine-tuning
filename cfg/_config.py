@@ -67,6 +67,43 @@ class Settings(BaseSettings, case_sensitive=False, extra="ignore"):
 
     results_path: str = str(PROJECT_ROOT.joinpath("results"))
 
+    model_output_dir: str = str(PROJECT_ROOT.joinpath("models"))
+
+    max_tokens_length_sft: int = 512
+
+    # PEFT / LoRA Configuration
+    peft_r: int = 8
+    # Common rule of thumb is lora_alpha = 2 * r.
+    # In underfitting case, increase LoRA rank to 16 or 32 and adjust lora_alpha accordingly.
+    peft_lora_alpha: int = 16
+    peft_target_modules: list[str] = ["q_proj", "v_proj"]
+    peft_lora_dropout: float = 0.05
+    peft_bias: str = "none"
+
+    # SFT Training Configuration
+    sft_per_device_train_batch_size: int = 2
+    sft_gradient_accumulation_steps: int = 4
+    sft_num_train_epochs: int = 3
+    sft_logging_steps: int = 10
+    # 5e-5 is also a safe choice if the higher rate proves unstable.
+    sft_learning_rate: float = 2e-4
+    # pack similar examples together for avoiding max_length padding inefficiences.
+    # please note examples will be concatenated so that
+    # max_length is filled with multilpe examples. This is interesting
+    # for domain adaptation but not on task resolution
+    sft_packing: bool = False
+    sft_save_steps: int = 500
+    sft_save_total_limit: int = 3
+    # Use fp16 for MPS mixed-precision training
+    sft_fp16_training: bool = False
+
+    # # quantization
+    # use_quantization: bool = True
+    # quant_load_in_4bit: bool = True
+    # quant_bnb_4bit_quant_type: str = "nf4"
+    # quant_bnb_4bit_compute_dtype: str = "bfloat16"
+    # quant_bnb_4bit_use_double_quant: bool = True
+
 
 def config_logger(
     log_level="DEBUG",

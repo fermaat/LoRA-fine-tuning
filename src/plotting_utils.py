@@ -1,8 +1,10 @@
 from typing import List
 
 import matplotlib.pyplot as plt
+import numpy as np
 
 from cfg import config_logger, logger, settings
+from src.utils import get_token_lengths_sft
 
 config_logger(log_level=settings.log_level)
 
@@ -49,3 +51,23 @@ def plot_metric_scores(metrics_dict, out_path="metrics.png", experiment_name: st
     plt.title("Evaluation Metrics")
     plt.ylabel("Score")
     plt.savefig(f"{settings.results_path}/{experiment_name}_{out_path}")
+
+
+def plot_lengths(dataset, tokenizer, dataset_type="sft"):
+    if dataset_type == "sft":
+        lengths = dataset.map(
+            lambda example: get_token_lengths_sft(example, tokenizer),
+            remove_columns=dataset.column_names,
+        )
+
+    all_lengths = lengths["length"]
+    print(f"max: {max(all_lengths)}")
+    print(f"Percentil 95: {np.percentile(all_lengths, 95)}")
+    print(f"avg: {np.mean(all_lengths)}")
+
+    # Histogram
+    plt.hist(all_lengths, bins=50)
+    plt.title("tokenized length distribution")
+    plt.xlabel("Tokens")
+    plt.ylabel("freq")
+    plt.show()
