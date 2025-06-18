@@ -174,7 +174,7 @@ def model_training(training_type: str, max_samples=None, resume_from_checkpoint=
     logger.info(f"Adapter model saved to {output_dir}/final")
 
     # # plot
-    plot_training_logs(log_file_path=log_file_path, output_dir=output_dir)
+    plot_training_logs(jsonl_filepath=log_file_path, output_dir=output_dir)
 
 
 if __name__ == "__main__":
