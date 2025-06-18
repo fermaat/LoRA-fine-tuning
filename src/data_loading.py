@@ -54,17 +54,57 @@ def is_short_enough(example, tokenizer, max_tokens):
     return length <= max_tokens
 
 
-def load_and_prepare_sft_dataset(dataset_name: str, split: str, tokenizer):
+def load_and_prepare_sft_dataset(
+    dataset_name: str, split: str, tokenizer, max_length, max_samples=None
+):
     dataset = load_dataset(dataset_name, split=split)
-    logger.info(f"Filtering dataset length to {settings.max_tokens_length_sft}")
+    if max_samples:
+        dataset = dataset.select(range(min(max_samples, len(dataset))))
+        logger.info(f"sampling dataset length to {max_samples}")
+    logger.info(f"Filtering dataset length to {max_length}")
     dataset = dataset.filter(
-        lambda x: is_short_enough(
-            x, tokenizer=tokenizer, max_tokens=settings.max_tokens_length_sft
-        )
+        lambda x: is_short_enough(x, tokenizer=tokenizer, max_tokens=max_length)
     )
     return dataset.map(
         lambda x: {"text": sft_formatting_func(x)}, remove_columns=dataset.column_names
     )
+
+
+def load_and_prepare_alignment_dataset(
+    dataset_name, split, tokenizer, max_length, max_samples=None
+):
+    dataset = load_dataset(dataset_name, split=split)
+    if max_samples:
+        dataset = dataset.select(range(min(max_samples, len(dataset))))
+        logger.info(f"sampling dataset length to {max_samples}")
+
+    def preprocess(example):
+        prompt = example["chosen"][0]["content"]
+        chosen = example["chosen"][1]["content"]
+        rejected = example["rejected"][1]["content"]
+
+        chosen_full = prompt + chosen
+        rejected_full = prompt + rejected
+
+        chosen_tok = tokenizer(
+            chosen_full, truncation=True, max_length=max_length, padding="max_length"
+        )
+        rejected_tok = tokenizer(
+            rejected_full, truncation=True, max_length=max_length, padding="max_length"
+        )
+
+        return {
+            "prompt": prompt,
+            "chosen": chosen,
+            "rejected": rejected,
+            "chosen_input_ids": chosen_tok["input_ids"],
+            "rejected_input_ids": rejected_tok["input_ids"],
+            "chosen_attention_mask": chosen_tok["attention_mask"],
+            "rejected_attention_mask": rejected_tok["attention_mask"],
+        }
+
+    dataset = dataset.map(preprocess, remove_columns=dataset.column_names)
+    return dataset
 
 
 def load_evaluation_dataset(dataset_name: str, split: str):

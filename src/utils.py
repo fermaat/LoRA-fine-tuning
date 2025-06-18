@@ -47,6 +47,20 @@ def generate_response(prompts, tokenizer, model, device, max_new_tokens):
     return decoded
 
 
+def get_dtype():
+    if settings.bf16_training:
+        return torch.bfloat16
+    if settings.fp16_training:
+        return torch.float16
+
+    if torch.cuda.is_available():
+        return torch.float16  # FP16 by default on CUDA
+    elif torch.backends.mps.is_available():
+        return torch.float32  # MPS doesn't quite work on float16
+    else:
+        return torch.float32  # cpu by default
+
+
 def save_predictions(preds, refs, filename="predictions.txt"):
     with open(filename, "w") as f:
         for i, (p, r) in enumerate(zip(preds, refs)):

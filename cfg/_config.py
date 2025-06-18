@@ -69,8 +69,6 @@ class Settings(BaseSettings, case_sensitive=False, extra="ignore"):
 
     model_output_dir: str = str(PROJECT_ROOT.joinpath("models"))
 
-    max_tokens_length_sft: int = 512
-
     # PEFT / LoRA Configuration
     peft_r: int = 8
     # Common rule of thumb is lora_alpha = 2 * r.
@@ -79,23 +77,26 @@ class Settings(BaseSettings, case_sensitive=False, extra="ignore"):
     peft_target_modules: list[str] = ["q_proj", "v_proj"]
     peft_lora_dropout: float = 0.05
     peft_bias: str = "none"
+    # Use fp16 for MPS mixed-precision training
+    fp16_training: bool = True
+    bf16_training: bool = True
 
-    # SFT Training Configuration
-    sft_per_device_train_batch_size: int = 2
-    sft_gradient_accumulation_steps: int = 4
-    sft_num_train_epochs: int = 3
-    sft_logging_steps: int = 10
+    per_device_train_batch_size: int = 2
+    gradient_accumulation_steps: int = 4
+    logging_steps: int = 1
+    save_steps: int = 1
+    save_total_limit: int = 3
+
+    # SFT specific Training Configuration
+    sft_num_train_epochs: int = 1
     # 5e-5 is also a safe choice if the higher rate proves unstable.
     sft_learning_rate: float = 2e-4
+    sft_max_tokens_length: int = 512
     # pack similar examples together for avoiding max_length padding inefficiences.
     # please note examples will be concatenated so that
     # max_length is filled with multilpe examples. This is interesting
     # for domain adaptation but not on task resolution
     sft_packing: bool = False
-    sft_save_steps: int = 500
-    sft_save_total_limit: int = 3
-    # Use fp16 for MPS mixed-precision training
-    sft_fp16_training: bool = False
 
     # # quantization
     # use_quantization: bool = True
@@ -103,6 +104,11 @@ class Settings(BaseSettings, case_sensitive=False, extra="ignore"):
     # quant_bnb_4bit_quant_type: str = "nf4"
     # quant_bnb_4bit_compute_dtype: str = "bfloat16"
     # quant_bnb_4bit_use_double_quant: bool = True
+
+    dpo_beta: float = 0.1
+    dpo_max_length: int = 512
+    dpo_learning_rate: float = 5e-5
+    dpo_num_train_epochs: int = 3
 
 
 def config_logger(

@@ -1,3 +1,5 @@
+import os
+import re
 from typing import Tuple
 
 import torch
@@ -9,6 +11,28 @@ from src.utils import setup_device
 
 config_logger(log_level=settings.log_level)
 device = setup_device()
+
+
+def get_latest_checkpoint(checkpoint_dir: str) -> str | None:
+    if not os.path.exists(checkpoint_dir):
+        return None
+
+    checkpoints = []
+    for entry in os.listdir(checkpoint_dir):
+        full_path = os.path.join(checkpoint_dir, entry)
+        if os.path.isdir(full_path) and re.match(r"checkpoint-\d+", entry):
+            checkpoints.append(full_path)
+
+    if not checkpoints:
+        return None
+
+    # Ordenar por número (paso) descendente y coger el mayor
+    checkpoints = sorted(
+        checkpoints,
+        key=lambda x: int(re.findall(r"\d+", os.path.basename(x))[0]),
+        reverse=True,
+    )
+    return checkpoints[0]
 
 
 def load_model_and_tokenizer(

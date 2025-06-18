@@ -1,3 +1,5 @@
+import json
+import os
 from typing import List
 
 import matplotlib.pyplot as plt
@@ -61,9 +63,9 @@ def plot_lengths(dataset, tokenizer, dataset_type="sft"):
         )
 
     all_lengths = lengths["length"]
-    print(f"max: {max(all_lengths)}")
-    print(f"Percentil 95: {np.percentile(all_lengths, 95)}")
-    print(f"avg: {np.mean(all_lengths)}")
+    logger.info(f"max: {max(all_lengths)}")
+    logger.info(f"Percentil 95: {np.percentile(all_lengths, 95)}")
+    logger.info(f"avg: {np.mean(all_lengths)}")
 
     # Histogram
     plt.hist(all_lengths, bins=50)
@@ -71,3 +73,51 @@ def plot_lengths(dataset, tokenizer, dataset_type="sft"):
     plt.xlabel("Tokens")
     plt.ylabel("freq")
     plt.show()
+
+
+def plot_training_logs(jsonl_filepath, output_dir):
+    epochs = []
+    loss = []
+    grad_norm = []
+    learning_rate = []
+    rewards_accuracies = []
+
+    with open(jsonl_filepath, "r") as f:
+        for line in f:
+            entry = json.loads(line)
+            epochs.append(entry.get("epoch", None))
+            loss.append(entry.get("loss", None))
+            grad_norm.append(entry.get("grad_norm", None))
+            learning_rate.append(entry.get("learning_rate", None))
+            rewards_accuracies.append(entry.get("rewards/accuracies", None))
+
+    # Plot
+    fig, axs = plt.subplots(2, 2, figsize=(12, 8))
+
+    axs[0, 0].plot(epochs, loss, label="Loss")
+    axs[0, 0].set_title("Loss")
+    axs[0, 0].set_xlabel("Epoch")
+    axs[0, 0].set_ylabel("Loss")
+
+    axs[0, 1].plot(epochs, learning_rate, label="Learning Rate", color="orange")
+    axs[0, 1].set_title("Learning Rate")
+    axs[0, 1].set_xlabel("Epoch")
+    axs[0, 1].set_ylabel("LR")
+
+    axs[1, 0].plot(epochs, grad_norm, label="Grad Norm", color="green")
+    axs[1, 0].set_title("Gradient Norm")
+    axs[1, 0].set_xlabel("Epoch")
+    axs[1, 0].set_ylabel("Grad Norm")
+
+    axs[1, 1].plot(epochs, rewards_accuracies, label="Rewards Accuracies", color="red")
+    axs[1, 1].set_title("Rewards Accuracies")
+    axs[1, 1].set_xlabel("Epoch")
+    axs[1, 1].set_ylabel("Accuracy")
+
+    plt.tight_layout()
+    os.makedirs(output_dir, exist_ok=True)
+    save_path = os.path.join(output_dir, "curve.png")
+    plt.savefig(save_path)
+    plt.close()
+
+    print(f"[✅] Loss plot saved to: {save_path}")
