@@ -1,6 +1,7 @@
 import argparse
 import json
 import os
+from typing import Any, Dict
 
 import torch
 from transformers import TrainerCallback, TrainingArguments
@@ -29,6 +30,93 @@ class JSONLoggerCallback(TrainerCallback):
             with open(self.log_path, "a") as f:
                 json.dump(logs, f)
                 f.write("\n")
+
+
+class CleanJSONLoggerCallback(TrainerCallback):
+    def __init__(self, log_path: str, log_steps: bool = True, log_epochs: bool = True):
+        """
+        Improved JSON logger for HuggingFace Trainer
+
+        Args:
+            log_path: Path to save the JSON log file
+            log_steps: Whether to log individual training steps
+            log_epochs: Whether to log epoch summaries
+        """
+        self.log_path = log_path
+        self.log_steps = log_steps
+        self.log_epochs = log_epochs
+
+        # Create directory if it doesn't exist
+        os.makedirs(os.path.dirname(log_path), exist_ok=True)
+
+        # Initialize log file with proper structure
+        with open(self.log_path, "w") as f:
+            f.write("")  # Clear file
+
+    def on_log(self, args, state, control, logs=None, **kwargs):
+        """Log training metrics during training steps"""
+        if logs is None or not self.log_steps:
+            return
+
+        # Filter out training summary (which contains train_runtime)
+        if "train_runtime" in logs:
+            return
+
+        # Create clean log entry
+        log_entry = {
+            "type": "step",
+            "step": state.global_step,
+            "epoch": round(logs.get("epoch", 0), 4),
+            "loss": round(logs.get("loss", 0), 4),
+            "learning_rate": logs.get("learning_rate", 0),
+            "grad_norm": round(logs.get("grad_norm", 0), 4)
+            if logs.get("grad_norm")
+            else None,
+        }
+
+        # Add optional metrics if they exist
+        optional_metrics = [
+            "num_tokens",
+            "mean_token_accuracy",
+            "rewards/chosen",
+            "rewards/rejected",
+            "rewards/accuracies",
+            "rewards/margins",
+            "logps/chosen",
+            "logps/rejected",
+            "logits/chosen",
+            "logits/rejected",
+        ]
+
+        for metric in optional_metrics:
+            if metric in logs:
+                value = logs[metric]
+                log_entry[metric] = (
+                    round(value, 4) if isinstance(value, float) else value
+                )
+
+        self._write_log_entry(log_entry)
+
+    def on_train_end(self, args, state, control, **kwargs):
+        """Log final training summary"""
+        if not self.log_epochs:
+            return
+
+        summary_entry = {
+            "type": "summary",
+            "total_steps": state.global_step,
+            "total_epochs": state.epoch,
+            "best_metric": getattr(state, "best_metric", None),
+            "training_completed": True,
+        }
+
+        self._write_log_entry(summary_entry)
+
+    def _write_log_entry(self, entry: Dict[str, Any]):
+        """Write a single log entry to file"""
+        with open(self.log_path, "a") as f:
+            json.dump(entry, f, separators=(",", ":"))
+            f.write("\n")
 
 
 def create_training_args(training_type: str, output_dir: str) -> TrainingArguments:
@@ -133,7 +221,7 @@ def model_training(training_type: str, max_samples=None, resume_from_checkpoint=
     log_folder = f"{settings.results_path}/{model_sub_folder}/"
     os.makedirs(os.path.dirname(log_folder), exist_ok=True)
     log_file_path = f"{log_folder}{training_type}_logs.json"
-    callbacks = [JSONLoggerCallback(log_file_path)]
+    callbacks = [CleanJSONLoggerCallback(log_file_path)]
 
     if training_type == "dpo":
         trainer = DPOTrainer(
@@ -174,7 +262,13 @@ def model_training(training_type: str, max_samples=None, resume_from_checkpoint=
     logger.info(f"Adapter model saved to {output_dir}/final")
 
     # # plot
-    plot_training_logs(jsonl_filepath=log_file_path, output_dir=output_dir)
+    plot_training_logs(
+        jsonl_filepath=log_file_path,
+        output_dir=f"{settings.results_path}/{model_sub_folder}",
+        metrics_to_plot=settings.sft_metrics_to_plot
+        if training_type == "sft"
+        else settings.dpo_metrics_to_plot,
+    )
 
 
 if __name__ == "__main__":
@@ -186,4 +280,4 @@ if __name__ == "__main__":
     )
     args = parser.parse_args()
 
-    model_training(args.training_type, max_samples=50, resume_from_checkpoint=True)
+    model_training(args.training_type, max_samples=50, resume_from_checkpoint=False)

@@ -2,6 +2,7 @@ import datetime
 import os
 import sys
 from pathlib import Path
+from typing import List
 
 from dotenv import load_dotenv
 
@@ -97,6 +98,12 @@ class Settings(BaseSettings, case_sensitive=False, extra="ignore"):
     # max_length is filled with multilpe examples. This is interesting
     # for domain adaptation but not on task resolution
     sft_packing: bool = False
+    sft_metrics_to_plot: List[str] = [
+        "grad_norm",
+        "learning_rate",
+        "num_tokens",
+        "mean_token_accuracy",
+    ]
 
     # # quantization
     # use_quantization: bool = True
@@ -109,6 +116,16 @@ class Settings(BaseSettings, case_sensitive=False, extra="ignore"):
     dpo_max_length: int = 512
     dpo_learning_rate: float = 5e-5
     dpo_num_train_epochs: int = 3
+    dpo_metrics_to_plot: List[str] = [
+        "rewards/chosen",
+        "rewards/rejected",
+        "rewards/accuracies",
+        "rewards/margins",
+        "logps/chosen",
+        "logps/rejected",
+        "logits/chosen",
+        "logits/rejected",
+    ]
 
 
 def config_logger(

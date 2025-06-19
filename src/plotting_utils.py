@@ -1,6 +1,6 @@
 import json
 import os
-from typing import List
+from typing import List, Optional
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -75,7 +75,7 @@ def plot_lengths(dataset, tokenizer, dataset_type="sft"):
     plt.show()
 
 
-def plot_training_logs(jsonl_filepath, output_dir):
+def plot_training_logs_old(jsonl_filepath, output_dir):
     epochs = []
     loss = []
     grad_norm = []
@@ -121,3 +121,117 @@ def plot_training_logs(jsonl_filepath, output_dir):
     plt.close()
 
     print(f"[✅] Loss plot saved to: {save_path}")
+
+
+def plot_training_logs(
+    jsonl_filepath: str, output_dir: str, metrics_to_plot: Optional[list] = None
+):
+    """
+    Plot training metrics from JSON log file
+
+    Args:
+        jsonl_filepath: Path to the JSONL log file
+        output_dir: Directory to save plots
+        metrics_to_plot: List of metrics to plot. If None, plots common metrics.
+    """
+    if metrics_to_plot is None:
+        metrics_to_plot = ["loss", "learning_rate", "grad_norm", "rewards/accuracies"]
+
+    # Read and parse log file
+    data = {"epochs": [], "steps": []}
+
+    with open(jsonl_filepath, "r") as f:
+        for line in f:
+            line = line.strip()
+            if not line:
+                continue
+
+            try:
+                entry = json.loads(line)
+
+                # Skip summary entries for plotting
+                if entry.get("type") == "summary":
+                    continue
+
+                data["epochs"].append(entry.get("epoch", 0))
+                data["steps"].append(entry.get("step", 0))
+
+                # Collect all metrics
+                for key, value in entry.items():
+                    if key not in ["type", "step", "epoch"] and value is not None:
+                        if key not in data:
+                            data[key] = []
+                        data[key].append(value)
+
+            except json.JSONDecodeError as e:
+                print(f"Warning: Could not parse line: {line[:50]}... Error: {e}")
+                continue
+
+    if not data["epochs"]:
+        print("No training data found in log file")
+        return
+
+    # Filter metrics that exist in data
+    available_metrics = [m for m in metrics_to_plot if m in data and data[m]]
+
+    if not available_metrics:
+        print(f"None of the requested metrics {metrics_to_plot} found in log file")
+        print(
+            f"Available metrics: {[k for k in data.keys() if k not in ['epochs', 'steps', 'type']]}"
+        )
+        return
+
+    # Create subplots
+    n_metrics = len(available_metrics)
+    cols = 2
+    rows = (n_metrics + 1) // 2
+
+    fig, axs = plt.subplots(rows, cols, figsize=(12, 4 * rows))
+    if n_metrics == 1:
+        axs = [axs]
+    elif rows == 1:
+        axs = [axs]
+    else:
+        axs = axs.flatten()
+
+    colors = ["blue", "orange", "green", "red", "purple", "brown", "pink", "gray"]
+
+    for i, metric in enumerate(available_metrics):
+        if i >= len(axs):
+            break
+
+        ax = axs[i]
+        color = colors[i % len(colors)]
+
+        # Plot metric vs epochs
+        ax.plot(data["epochs"], data[metric], label=metric, color=color, linewidth=2)
+        ax.set_title(metric.replace("/", " ").replace("_", " ").title())
+        ax.set_xlabel("Epoch")
+        ax.set_ylabel(metric.replace("/", " ").replace("_", " ").title())
+        ax.grid(True, alpha=0.3)
+
+        # Add some styling
+        ax.spines["top"].set_visible(False)
+        ax.spines["right"].set_visible(False)
+
+    # Hide empty subplots
+    for i in range(len(available_metrics), len(axs)):
+        axs[i].set_visible(False)
+
+    plt.tight_layout()
+
+    # Save plot
+    os.makedirs(output_dir, exist_ok=True)
+    save_path = os.path.join(output_dir, "training_curves.png")
+    plt.savefig(save_path, dpi=300, bbox_inches="tight")
+    plt.close()
+
+    print(f"[✅] Training curves saved to: {save_path}")
+
+    # Print summary statistics
+    print("\n📊 Training Summary:")
+    print(f"Total epochs: {max(data['epochs']):.2f}")
+    print(f"Total steps: {max(data['steps'])}")
+    if "loss" in data:
+        print(f"Final loss: {data['loss'][-1]:.4f}")
+        print(f"Best loss: {min(data['loss']):.4f}")
