@@ -14,6 +14,7 @@ from cfg import (
 )
 from src.data_loading import (
     load_and_prepare_alignment_dataset,
+    load_and_prepare_orpo_alignment_dataset,
     load_and_prepare_sft_dataset,
 )
 from src.model import get_latest_checkpoint, load_model_and_tokenizer
@@ -239,6 +240,8 @@ def model_training(
     dataset_load_function = (
         load_and_prepare_sft_dataset
         if training_type == "sft"
+        else load_and_prepare_orpo_alignment_dataset
+        if training_type == "orpo"
         else load_and_prepare_alignment_dataset
     )
 
@@ -371,13 +374,13 @@ if __name__ == "__main__":
 
     parser = argparse.ArgumentParser()
     parser.add_argument(
-        "--training_type", type=str, choices=["sft", "dpo"], required=True
+        "--training_type", type=str, choices=["sft", "dpo", "orpo"], required=True
     )
     args = parser.parse_args()
 
     model_training(
         args.training_type,
-        # max_samples=50,
+        max_samples=2000,
         max_samples_eval=50,
-        resume_from_checkpoint=True,
+        resume_from_checkpoint=False,
     )

@@ -107,6 +107,80 @@ def load_and_prepare_alignment_dataset(
     return dataset
 
 
+def load_and_prepare_orpo_alignment_dataset(
+    dataset_name, split, tokenizer, max_length, max_samples=None
+):
+    dataset = load_dataset(dataset_name, split=split)
+    if max_samples:
+        dataset = dataset.select(range(min(max_samples, len(dataset))))
+        logger.info(f"sampling dataset length to {max_samples}")
+
+    def preprocess(example):
+        prompt = example["chosen"][0]["content"]
+        chosen = example["chosen"][1]["content"]
+        rejected = example["rejected"][1]["content"]
+
+        # Formato simple que funciona bien con ORPO/DPO
+        return {
+            "prompt": prompt,
+            "chosen": chosen,
+            "rejected": rejected,
+        }
+
+    dataset = dataset.map(preprocess, remove_columns=dataset.column_names)
+
+    # Filtrar ejemplos problemáticos
+    def filter_valid_examples(example):
+        # Verificar que los textos no estén vacíos
+        if (
+            not example["prompt"].strip()
+            or not example["chosen"].strip()
+            or not example["rejected"].strip()
+        ):
+            return False
+
+        # Verificar que chosen y rejected sean diferentes
+        if example["chosen"].strip() == example["rejected"].strip():
+            return False
+
+        # Verificar longitudes razonables
+        prompt_len = len(tokenizer.encode(example["prompt"]))
+        chosen_len = len(tokenizer.encode(example["chosen"]))
+        rejected_len = len(tokenizer.encode(example["rejected"]))
+
+        # Filtrar ejemplos demasiado largos
+        if (
+            prompt_len + chosen_len > max_length * 0.9
+            or prompt_len + rejected_len > max_length * 0.9
+        ):
+            return False
+
+        # Filtrar ejemplos demasiado cortos
+        if chosen_len < 5 or rejected_len < 5:
+            return False
+
+        return True
+
+    original_size = len(dataset)
+    dataset = dataset.filter(filter_valid_examples)
+    filtered_size = len(dataset)
+
+    if filtered_size < original_size:
+        logger.info(f"Filtered dataset: {original_size} -> {filtered_size} examples")
+        logger.info(f"Removed {original_size - filtered_size} problematic examples")
+
+    # Log algunos ejemplos para verificar
+    if len(dataset) > 0:
+        sample = dataset[0]
+        logger.info(f"Sample prompt length: {len(tokenizer.encode(sample['prompt']))}")
+        logger.info(f"Sample chosen length: {len(tokenizer.encode(sample['chosen']))}")
+        logger.info(
+            f"Sample rejected length: {len(tokenizer.encode(sample['rejected']))}"
+        )
+
+    return dataset
+
+
 def load_evaluation_dataset(dataset_name: str, split: str):
     """
     Load the evaluation dataset.
