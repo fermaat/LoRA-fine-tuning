@@ -5,7 +5,7 @@ from typing import Any, Dict
 
 import torch
 from transformers import TrainerCallback, TrainingArguments
-from trl import DPOConfig, DPOTrainer, SFTConfig, SFTTrainer
+from trl import DPOConfig, DPOTrainer, ORPOConfig, ORPOTrainer, SFTConfig, SFTTrainer
 
 from cfg import (
     config_logger,
@@ -55,45 +55,96 @@ class CleanJSONLoggerCallback(TrainerCallback):
 
     def on_log(self, args, state, control, logs=None, **kwargs):
         """Log training metrics during training steps"""
-        if logs is None or not self.log_steps:
+        if logs is None:
             return
 
         # Filter out training summary (which contains train_runtime)
         if "train_runtime" in logs:
             return
 
-        # Create clean log entry
-        log_entry = {
-            "type": "step",
-            "step": state.global_step,
-            "epoch": round(logs.get("epoch", 0), 4),
-            "loss": round(logs.get("loss", 0), 4),
-            "learning_rate": logs.get("learning_rate", 0),
-            "grad_norm": round(logs.get("grad_norm", 0), 4)
-            if logs.get("grad_norm")
-            else None,
-        }
+        # Determine if this is an evaluation log or training log
+        is_eval_log = "eval_loss" in logs
 
-        # Add optional metrics if they exist
-        optional_metrics = [
-            "num_tokens",
-            "mean_token_accuracy",
-            "rewards/chosen",
-            "rewards/rejected",
-            "rewards/accuracies",
-            "rewards/margins",
-            "logps/chosen",
-            "logps/rejected",
-            "logits/chosen",
-            "logits/rejected",
-        ]
+        if is_eval_log:
+            # Handle evaluation logs
+            log_entry = {
+                "type": "eval",
+                "step": state.global_step,
+                "epoch": round(logs.get("epoch", 0), 4),
+                "eval_loss": round(logs.get("eval_loss", 0), 4),
+            }
 
-        for metric in optional_metrics:
-            if metric in logs:
-                value = logs[metric]
-                log_entry[metric] = (
-                    round(value, 4) if isinstance(value, float) else value
-                )
+            # Add standard eval metrics
+            eval_metrics = [
+                "eval_accuracy",
+                "eval_f1",
+                "eval_precision",
+                "eval_recall",
+                "eval_runtime",
+                "eval_samples_per_second",
+                "eval_steps_per_second",
+            ]
+
+            for metric in eval_metrics:
+                if metric in logs:
+                    value = logs[metric]
+                    log_entry[metric] = (
+                        round(value, 4) if isinstance(value, float) else value
+                    )
+
+            # Add DPO-specific reward metrics during evaluation if they exist
+            dpo_eval_metrics = [
+                "eval_rewards/chosen",
+                "eval_rewards/rejected",
+                "eval_rewards/accuracies",
+                "eval_rewards/margins",
+            ]
+
+            for metric in dpo_eval_metrics:
+                if metric in logs:
+                    value = logs[metric]
+                    log_entry[metric.replace("eval_", "")] = (
+                        round(value, 4) if isinstance(value, float) else value
+                    )
+
+        elif self.log_steps:
+            # Handle training step logs
+            log_entry = {
+                "type": "step",
+                "step": state.global_step,
+                "epoch": round(logs.get("epoch", 0), 4),
+                "loss": round(logs.get("loss", 0), 4),
+                "learning_rate": logs.get("learning_rate", 0),
+                "grad_norm": round(logs.get("grad_norm", 0), 4)
+                if logs.get("grad_norm")
+                else None,
+            }
+
+            # Add optional training metrics if they exist
+            optional_metrics = [
+                "num_tokens",
+                "mean_token_accuracy",
+                "rewards/chosen",
+                "rewards/rejected",
+                "rewards/accuracies",
+                "rewards/margins",
+                "logps/chosen",
+                "logps/rejected",
+                "logits/chosen",
+                "logits/rejected",
+                "sft_loss",  # For ORPO
+                "odds_ratio_loss",  # For ORPO
+                "nll_loss",  # For ORPO - negative log likelihood
+            ]
+
+            for metric in optional_metrics:
+                if metric in logs:
+                    value = logs[metric]
+                    log_entry[metric] = (
+                        round(value, 4) if isinstance(value, float) else value
+                    )
+        else:
+            return  # Skip if we're not logging steps and it's not an eval log
 
         self._write_log_entry(log_entry)
 
@@ -133,11 +184,29 @@ def create_training_args(training_type: str, output_dir: str) -> TrainingArgumen
         bf16=False,
         remove_unused_columns=False,
         push_to_hub=False,
+        # evaluation
+        eval_strategy="steps",  # Run evaluation every eval_steps
+        eval_steps=settings.save_steps,  # Evaluate at same frequency as saving
+        per_device_eval_batch_size=settings.per_device_train_batch_size,
+        # Best checkpoint saving
+        load_best_model_at_end=True,
+        metric_for_best_model="eval_loss",
+        greater_is_better=False,
+        save_strategy="steps",
     )
 
     if training_type == "dpo":
         return DPOConfig(
             beta=settings.dpo_beta,
+            max_length=settings.dpo_max_length,
+            learning_rate=settings.dpo_learning_rate,
+            num_train_epochs=settings.dpo_num_train_epochs,
+            run_name=f"{training_type}-gemma-lr{settings.dpo_learning_rate}-r{settings.peft_r}",
+            **base_args,
+        )
+    elif training_type == "orpo":
+        return ORPOConfig(
+            beta=settings.orpo_beta,
             max_length=settings.dpo_max_length,
             learning_rate=settings.dpo_learning_rate,
             num_train_epochs=settings.dpo_num_train_epochs,
@@ -157,8 +226,13 @@ def create_training_args(training_type: str, output_dir: str) -> TrainingArgumen
         raise ValueError(f"Unsupported training type: {training_type}")
 
 
-def model_training(training_type: str, max_samples=None, resume_from_checkpoint=False):
-    assert training_type in ["sft", "dpo"], (
+def model_training(
+    training_type: str,
+    max_samples=None,
+    resume_from_checkpoint=False,
+    max_samples_eval=None,
+):
+    assert training_type in ["sft", "dpo", "orpo"], (
         f"Unsupported training_type: {training_type}"
     )
 
@@ -193,26 +267,36 @@ def model_training(training_type: str, max_samples=None, resume_from_checkpoint=
     )
 
     logger.info("Loading and preparing datasets...")
+    # Determine dataset split names and max_length based on training type
+    if training_type == "sft":
+        train_split = "train_sft"
+        test_split = "test_sft"
+        max_length = settings.sft_max_tokens_length
+    else:  # dpo or orpo
+        train_split = "train_prefs"
+        test_split = "test_prefs"
+        max_length = getattr(
+            settings, f"{training_type}_max_length", settings.dpo_max_length
+        )
+
     train_dataset = dataset_load_function(
         settings.default_dataset_name,
-        f"train_{training_type}" if training_type == "sft" else "train_prefs",
+        train_split,
         tokenizer=tokenizer,
-        max_length=settings.sft_max_tokens_length
-        if training_type == "sft"
-        else settings.dpo_max_length,
+        max_length=max_length,
         max_samples=max_samples,
     )
     eval_dataset = dataset_load_function(
         settings.default_dataset_name,
-        f"test_{training_type}" if training_type == "sft" else "test_prefs",
+        test_split,
         tokenizer=tokenizer,
-        max_length=settings.sft_max_tokens_length
-        if training_type == "sft"
-        else settings.dpo_max_length,
-        max_samples=max_samples,
+        max_length=max_length,
+        max_samples=max_samples_eval,
     )
+
     logger.info(f"Training dataset size: {len(train_dataset)}")
     logger.info(f"Evaluation dataset size: {len(eval_dataset)}")
+
     model_sub_folder = (
         f"lora-{training_type}-{settings.default_model_id.split('/')[-1]}"
     )
@@ -227,6 +311,15 @@ def model_training(training_type: str, max_samples=None, resume_from_checkpoint=
         trainer = DPOTrainer(
             model=model,
             ref_model=None,  # use another reference model just in case
+            args=args,
+            train_dataset=train_dataset,
+            eval_dataset=eval_dataset,
+            processing_class=tokenizer,
+            callbacks=callbacks,
+        )
+    elif training_type == "orpo":
+        trainer = ORPOTrainer(
+            model=model,
             args=args,
             train_dataset=train_dataset,
             eval_dataset=eval_dataset,
@@ -261,13 +354,15 @@ def model_training(training_type: str, max_samples=None, resume_from_checkpoint=
     trainer.save_model(f"{output_dir}/final")
     logger.info(f"Adapter model saved to {output_dir}/final")
 
+    metrics_to_plot = getattr(settings, f"{training_type}_metrics_to_plot")
+
     # # plot
     plot_training_logs(
         jsonl_filepath=log_file_path,
         output_dir=f"{settings.results_path}/{model_sub_folder}",
-        metrics_to_plot=settings.sft_metrics_to_plot
-        if training_type == "sft"
-        else settings.dpo_metrics_to_plot,
+        metrics_to_plot=metrics_to_plot,
+        smoothing_window=10,
+        downsample_factor=5,
     )
 
 
@@ -280,4 +375,9 @@ if __name__ == "__main__":
     )
     args = parser.parse_args()
 
-    model_training(args.training_type, max_samples=50, resume_from_checkpoint=False)
+    model_training(
+        args.training_type,
+        # max_samples=50,
+        max_samples_eval=50,
+        resume_from_checkpoint=True,
+    )

@@ -75,6 +75,7 @@ class Settings(BaseSettings, case_sensitive=False, extra="ignore"):
     # Common rule of thumb is lora_alpha = 2 * r.
     # In underfitting case, increase LoRA rank to 16 or 32 and adjust lora_alpha accordingly.
     peft_lora_alpha: int = 16
+    # will just PEFT on those two layers for now. Just for testing
     peft_target_modules: list[str] = ["q_proj", "v_proj"]
     peft_lora_dropout: float = 0.05
     peft_bias: str = "none"
@@ -85,7 +86,7 @@ class Settings(BaseSettings, case_sensitive=False, extra="ignore"):
     per_device_train_batch_size: int = 2
     gradient_accumulation_steps: int = 4
     logging_steps: int = 1
-    save_steps: int = 1
+    save_steps: int = 10
     save_total_limit: int = 3
 
     # SFT specific Training Configuration
@@ -99,6 +100,8 @@ class Settings(BaseSettings, case_sensitive=False, extra="ignore"):
     # for domain adaptation but not on task resolution
     sft_packing: bool = False
     sft_metrics_to_plot: List[str] = [
+        "loss",
+        "eval_loss",
         "grad_norm",
         "learning_rate",
         "num_tokens",
@@ -115,8 +118,33 @@ class Settings(BaseSettings, case_sensitive=False, extra="ignore"):
     dpo_beta: float = 0.1
     dpo_max_length: int = 512
     dpo_learning_rate: float = 5e-5
-    dpo_num_train_epochs: int = 3
+    dpo_num_train_epochs: int = 1
     dpo_metrics_to_plot: List[str] = [
+        "loss",
+        "eval_loss",
+        "rewards/chosen",
+        "rewards/rejected",
+        "rewards/accuracies",
+        "rewards/margins",
+        "logps/chosen",
+        "logps/rejected",
+        "logits/chosen",
+        "logits/rejected",
+    ]
+
+    orpo_beta: float = 0.1  # Default beta for ORPO
+    orpo_max_length: int = 512
+    orpo_learning_rate: float = 5e-6
+    orpo_num_train_epochs: int = 1
+    orpo_metrics_to_plot: List[str] = [
+        "loss",
+        "eval_loss",
+        "sft_loss",  # SFT (supervised fine-tuning loss)
+        "eval_sft_loss",  # Eval SFT
+        "odds_ratio_loss",  # odds ratio (ORPO)
+        "eval_odds_ratio_loss",  # Eval odds ratio
+        "nll_loss",  # Negative log likelihood loss
+        "eval_nll_loss",  # Eval NLL loss
         "rewards/chosen",
         "rewards/rejected",
         "rewards/accuracies",
