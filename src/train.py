@@ -380,7 +380,7 @@ if __name__ == "__main__":
 
     model_training(
         args.training_type,
-        max_samples=2000,
+        # max_samples=2000,
         max_samples_eval=50,
-        resume_from_checkpoint=False,
+        resume_from_checkpoint=True,
     )
