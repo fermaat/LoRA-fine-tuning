@@ -120,7 +120,7 @@ def load_and_prepare_orpo_alignment_dataset(
         chosen = example["chosen"][1]["content"]
         rejected = example["rejected"][1]["content"]
 
-        # Formato simple que funciona bien con ORPO/DPO
+        # Very simple format that works with ORPO/DPO
         return {
             "prompt": prompt,
             "chosen": chosen,
@@ -129,9 +129,9 @@ def load_and_prepare_orpo_alignment_dataset(
 
     dataset = dataset.map(preprocess, remove_columns=dataset.column_names)
 
-    # Filtrar ejemplos problemáticos
+    # Remove problematic examples
     def filter_valid_examples(example):
-        # Verificar que los textos no estén vacíos
+        # Verufy texts are not empty
         if (
             not example["prompt"].strip()
             or not example["chosen"].strip()
@@ -139,23 +139,23 @@ def load_and_prepare_orpo_alignment_dataset(
         ):
             return False
 
-        # Verificar que chosen y rejected sean diferentes
+        # Verify chosen and rejected are different
         if example["chosen"].strip() == example["rejected"].strip():
             return False
 
-        # Verificar longitudes razonables
+        # Verify lengrhs
         prompt_len = len(tokenizer.encode(example["prompt"]))
         chosen_len = len(tokenizer.encode(example["chosen"]))
         rejected_len = len(tokenizer.encode(example["rejected"]))
 
-        # Filtrar ejemplos demasiado largos
+        # Filter too long examples
         if (
             prompt_len + chosen_len > max_length * 0.9
             or prompt_len + rejected_len > max_length * 0.9
         ):
             return False
 
-        # Filtrar ejemplos demasiado cortos
+        # Filter too short examples
         if chosen_len < 5 or rejected_len < 5:
             return False
 

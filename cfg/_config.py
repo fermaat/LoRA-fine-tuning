@@ -117,7 +117,7 @@ class Settings(BaseSettings, case_sensitive=False, extra="ignore"):
 
     dpo_beta: float = 0.1
     dpo_max_length: int = 512
-    dpo_learning_rate: float = 5e-5
+    dpo_learning_rate: float = 1e-5  # 5e-5
     dpo_num_train_epochs: int = 1
     dpo_metrics_to_plot: List[str] = [
         "loss",
